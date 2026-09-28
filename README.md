@@ -1,8 +1,23 @@
 # whatssl
 
-识别客户端是否使用OpenSSL,检测网站 <https://whatssl.guage.cool:8443/> 
+识别客户端是否使用OpenSSL,检测网站 <https://whatssl.guage.cool/> 
 
 由于Python,PHP等都使用OpenSSL，也会这可以成为反爬的一个特征
+
+## 部署形态
+
+对外只有 **443** 一个端口。服务器上的 Caddy 用 layer4 插件按 SNI 分流：
+
+- SNI == `whatssl.guage.cool` 的连接**原样 TCP 透传**给 `127.0.0.1:8443` 的本进程，Caddy 不终结这段 TLS；
+- 其余 SNI 交回 Caddy 自己终结并按站点路由。
+
+**Caddy 绝不能先终结 TLS 再转发过来**：一旦解密，密文 Finished 记录就不存在了，检测必然失效。
+因此本服务对外的 443 也只支持 TLS 1.2，且不宣告 ALPN（只 `http/1.1`）；
+Caddy 侧同时用 `protocols h1 h2` 关掉了 HTTP/3 —— QUIC 走 UDP/443、只支持 TLS 1.3，
+无论 Caddy 什么版本都不会经过本进程，关掉 `alt-svc` 是为了让浏览器别绕开检测。
+
+证书由 Caddy 通过 ACME 自动签发续期，本进程只读它写下的文件（`certs/` 是指向 Caddy
+存储目录的软链），并按内容摘要在运行期热加载，不需要重启。
 
 ## 原理
 
@@ -45,24 +60,24 @@
 ### powershell
 
 ```ps
-Invoke-WebRequest https://whatssl.guage.cool:8443/ | Select -ExpandProperty Content
+Invoke-WebRequest https://whatssl.guage.cool/ | Select -ExpandProperty Content
 ```
 
 ### python
 
 ```sh
-python -c "print(__import__('requests').get('https://whatssl.guage.cool:8443/').text)"
+python -c "print(__import__('requests').get('https://whatssl.guage.cool/').text)"
 ```
 
 ### php
 
 ```php
 <?php
-echo file_get_contents("https://whatssl.guage.cool:8443/");
+echo file_get_contents("https://whatssl.guage.cool/");
 ```
 
 ### curl
 
 ```sh
-curl  https://whatssl.guage.cool:8443/
+curl https://whatssl.guage.cool/
 ```
